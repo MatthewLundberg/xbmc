@@ -16,9 +16,8 @@
 #include "cores/VideoPlayer/VideoRenderers/LinuxRendererGL.h"
 #include "cores/VideoPlayer/VideoRenderers/RenderFactory.h"
 #include "rendering/gl/ScreenshotSurfaceGL.h"
+#include "utils/XTimeUtils.h"
 #include "utils/log.h"
-
-#include "platform/posix/XTimeUtils.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -81,14 +80,6 @@ bool CWinSystemGbmGLContext::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res
   CWinSystemGbm::SetFullScreen(fullScreen, res, blankOtherDisplays);
   CRenderSystemGL::ResetRenderSystem(res.iWidth, res.iHeight);
 
-  if (!m_delayDispReset)
-  {
-    CSingleLock lock(m_resourceSection);
-
-    for (auto resource : m_resources)
-      resource->OnResetDisplay();
-  }
-
   return true;
 }
 
@@ -108,19 +99,21 @@ void CWinSystemGbmGLContext::PresentRender(bool rendered, bool videoLayer)
       }
     }
     CWinSystemGbm::FlipPage(rendered, videoLayer);
+
+    if (m_dispReset && m_dispResetTimer.IsTimePast())
+    {
+      CLog::Log(LOGDEBUG, "CWinSystemGbmGLContext::%s - Sending display reset to all clients",
+                __FUNCTION__);
+      m_dispReset = false;
+      CSingleLock lock(m_resourceSection);
+
+      for (auto resource : m_resources)
+        resource->OnResetDisplay();
+    }
   }
   else
   {
-    Sleep(10);
-  }
-
-  if (m_delayDispReset && m_dispResetTimer.IsTimePast())
-  {
-    m_delayDispReset = false;
-    CSingleLock lock(m_resourceSection);
-
-    for (auto resource : m_resources)
-      resource->OnResetDisplay();
+    KODI::TIME::Sleep(10);
   }
 }
 

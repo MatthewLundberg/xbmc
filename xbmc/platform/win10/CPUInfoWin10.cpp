@@ -12,7 +12,6 @@
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/StringUtils.h"
-#include "utils/SysfsUtils.h"
 #include "utils/Temperature.h"
 
 #include <winrt/Windows.Foundation.Metadata.h>
@@ -116,4 +115,10 @@ int CCPUInfoWin10::GetUsedPercentage()
   m_nextUsedReadTime.Set(MINIMUM_TIME_BETWEEN_READS);
 
   return static_cast<int>(m_lastUsedPercentage);
+}
+
+bool CCPUInfoWin10::GetTemperature(CTemperature& temperature)
+{
+  temperature.SetValid(false);
+  return false;
 }

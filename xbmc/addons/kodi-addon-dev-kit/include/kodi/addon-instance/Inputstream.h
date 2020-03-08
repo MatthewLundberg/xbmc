@@ -133,11 +133,12 @@ extern "C"
   {
     enum STREAM_TYPE
     {
-      TYPE_NONE,
+      TYPE_NONE = 0,
       TYPE_VIDEO,
       TYPE_AUDIO,
       TYPE_SUBTITLE,
       TYPE_TELETEXT,
+      TYPE_RDS,
     } m_streamType;
 
     enum Codec_FEATURES : uint32_t
@@ -207,7 +208,7 @@ extern "C"
     // Keep in sync with AVColorRange
     enum COLORRANGE
     {
-      COLORRANGE_UNKNOWN,
+      COLORRANGE_UNKNOWN = 0,
       COLORRANGE_LIMITED,
       COLORRANGE_FULLRANGE,
       COLORRANGE_MAX

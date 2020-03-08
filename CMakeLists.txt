@@ -56,6 +56,7 @@ if(UNIX)
   option(ENABLE_INTERNAL_FMT "Enable internal fmt?" OFF)
   option(ENABLE_INTERNAL_FSTRCMP "Enable internal fstrcmp?" OFF)
   option(ENABLE_INTERNAL_FLATBUFFERS "Enable internal flatbuffers?" OFF)
+  option(ENABLE_INTERNAL_DAV1D "Enable internal dav1d?" OFF)
 endif()
 # System options
 if(NOT WIN32)
@@ -141,6 +142,7 @@ set(optional_deps Alsa
                   CEC
                   ClangFormat
                   DBus
+                  Iso9660pp
                   LCMS2
                   LircClient
                   MDNS
@@ -152,6 +154,7 @@ set(optional_deps Alsa
                   SmbClient
                   Sndio
                   UDEV
+                  Udf
                   XSLT
                   ${PLATFORM_OPTIONAL_DEPS})
 
@@ -319,6 +322,11 @@ if(NOT CORE_SYSTEM_NAME STREQUAL android)
 else()
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
   add_library(${APP_NAME_LC} SHARED ${CORE_MAIN_SOURCE} "${RESOURCES}" ${OTHER_FILES})
+  if(CPU MATCHES x86_64)
+    # Statically resolve global references to shared library (ie. ffmpeg) definitions.
+    # Related to https://stackoverflow.com/questions/46307266/including-objects-to-a-shared-library-from-a-c-archive-a
+    set_target_properties(${APP_NAME_LC} PROPERTIES LINK_FLAGS "-Wl,-Bsymbolic")
+  endif()
 endif()
 add_dependencies(${APP_NAME_LC} ${APP_NAME_LC}-libraries export-files pack-skins)
 whole_archive(_MAIN_LIBRARIES ${core_DEPENDS})

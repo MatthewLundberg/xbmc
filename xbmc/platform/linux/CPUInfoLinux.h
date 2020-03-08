@@ -8,10 +8,13 @@
 
 #pragma once
 
-#include "utils/CPUInfo.h"
 #include "utils/Temperature.h"
 
-class CCPUInfoLinux : public CCPUInfo
+#include "platform/posix/CPUInfoPosix.h"
+
+#include <string>
+
+class CCPUInfoLinux : public CCPUInfoPosix
 {
 public:
   CCPUInfoLinux();
@@ -20,4 +23,8 @@ public:
   int GetUsedPercentage() override;
   float GetCPUFrequency() override;
   bool GetTemperature(CTemperature& temperature) override;
+
+private:
+  std::string m_freqPath;
+  std::string m_tempPath;
 };

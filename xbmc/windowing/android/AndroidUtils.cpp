@@ -13,7 +13,6 @@
 #include "settings/SettingsComponent.h"
 #include "settings/lib/SettingsManager.h"
 #include "utils/StringUtils.h"
-#include "utils/SysfsUtils.h"
 #include "utils/log.h"
 #include "windowing/GraphicContext.h"
 
@@ -309,7 +308,8 @@ bool CAndroidUtils::ProbeResolutions(std::vector<RESOLUTION_INFO>& resolutions)
 
 bool CAndroidUtils::UpdateDisplayModes()
 {
-  fetchDisplayModes();
+  if (CJNIBase::GetSDKVersion() >= 24)
+    fetchDisplayModes();
   return true;
 }
 

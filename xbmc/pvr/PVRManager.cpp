@@ -483,7 +483,7 @@ void CPVRManager::Process()
   while (!LoadComponents(progressHandler) && IsInitialising())
   {
     CLog::Log(LOGWARNING, "PVR Manager failed to load data, retrying");
-    Sleep(1000);
+    CThread::Sleep(1000);
 
     if (progressHandler && progressTimeout.IsTimePast())
     {
@@ -579,6 +579,8 @@ bool CPVRManager::SetWakeupCommand()
 
 void CPVRManager::OnSleep()
 {
+  PublishEvent(PVREvent::SystemSleep);
+
   SetWakeupCommand();
 
   m_addons->OnSystemSleep();
@@ -587,6 +589,8 @@ void CPVRManager::OnSleep()
 void CPVRManager::OnWake()
 {
   m_addons->OnSystemWake();
+
+  PublishEvent(PVREvent::SystemWake);
 
   /* start job to search for missing channel icons */
   TriggerSearchMissingChannelIcons();
@@ -603,7 +607,7 @@ bool CPVRManager::LoadComponents(CPVRGUIProgressHandler* progressHandler)
 {
   /* load at least one client */
   while (IsInitialising() && m_addons && !m_addons->HasCreatedClients())
-    Sleep(50);
+    CThread::Sleep(50);
 
   if (!IsInitialising() || !m_addons->HasCreatedClients())
     return false;

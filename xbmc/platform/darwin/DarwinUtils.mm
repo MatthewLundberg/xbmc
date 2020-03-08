@@ -148,10 +148,17 @@ const char* CDarwinUtils::GetAppRootFolder(void)
   {
     if (IsIosSandboxed())
     {
+#ifdef TARGET_DARWIN_TVOS
+      // writing to Documents is prohibited, more info:
+      // https://developer.apple.com/library/archive/documentation/General/Conceptual/AppleTV_PG/index.html#//apple_ref/doc/uid/TP40015241-CH12-SW5
+      // https://forums.developer.apple.com/thread/89008
+      rootFolder = "Library/Caches";
+#else
       // when we are sandbox make documents our root
       // so that user can access everything he needs
       // via itunes sharing
       rootFolder = "Documents";
+#endif
     }
     else
     {
@@ -168,8 +175,6 @@ bool CDarwinUtils::IsIosSandboxed(void)
   std::call_once(flag, [] {
     auto executablePath = getExecutablePath();
     auto sandboxPrefixPaths = {
-        // since iOS 8
-        @"/var/mobile/Containers/Bundle/",
         // since iOS later than 9.0.2 but before 9.3.5
         @"/var/containers/Bundle/",
         // since iOS 13

@@ -36,6 +36,7 @@
 #include "settings/lib/Setting.h"
 #include "settings/lib/SettingDefinitions.h"
 #include "storage/MediaManager.h"
+#include "utils/FileExtensionProvider.h"
 #include "utils/StringUtils.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
@@ -684,7 +685,7 @@ bool CGUIControlButtonSetting::OnClick()
     {
       std::shared_ptr<CSettingDate> settingDate = std::static_pointer_cast<CSettingDate>(m_pSetting);
 
-      SYSTEMTIME systemdate;
+      KODI::TIME::SystemTime systemdate;
       settingDate->GetDate().GetAsSystemTime(systemdate);
       if (CGUIDialogNumeric::ShowAndGetDate(systemdate, Localize(buttonControl->GetHeading())))
         SetValid(settingDate->SetDate(CDateTime(systemdate)));
@@ -693,7 +694,7 @@ bool CGUIControlButtonSetting::OnClick()
     {
       std::shared_ptr<CSettingTime> settingTime = std::static_pointer_cast<CSettingTime>(m_pSetting);
 
-      SYSTEMTIME systemtime;
+      KODI::TIME::SystemTime systemtime;
       settingTime->GetTime().GetAsSystemTime(systemtime);
 
       if (CGUIDialogNumeric::ShowAndGetTime(systemtime, Localize(buttonControl->GetHeading())))
@@ -887,7 +888,20 @@ bool CGUIControlButtonSetting::GetPath(std::shared_ptr<CSettingPath> pathSetting
       shares, pathSetting->GetMasking(CServiceBroker::GetFileExtensionProvider()), heading, path,
       control->UseImageThumbs(), control->UseFileDirectories());
   else if (control->GetFormat() == "image")
-    result = CGUIDialogFileBrowser::ShowAndGetImage(shares, heading, path);
+  {
+    /* Check setting contains own masking, to filter required image type.
+     * e.g. png only needed
+     * <constraints>
+     *   <masking>*.png</masking>
+     * </constraints>
+     * <control type="button" format="image">
+     *   ...
+     */
+    std::string ext = pathSetting->GetMasking(CServiceBroker::GetFileExtensionProvider());
+    if (ext.empty())
+      ext = CServiceBroker::GetFileExtensionProvider().GetPictureExtensions();
+    result = CGUIDialogFileBrowser::ShowAndGetFile(shares, ext, heading, path, true);
+  }
   else
     result = CGUIDialogFileBrowser::ShowAndGetDirectory(shares, heading, path, pathSetting->Writable());
 

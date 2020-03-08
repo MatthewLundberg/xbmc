@@ -9,17 +9,19 @@
 #include "CPUInfoLinux.h"
 
 #include "utils/StringUtils.h"
-#include "utils/SysfsUtils.h"
 #include "utils/Temperature.h"
 
+#include "platform/linux/SysfsPath.h"
+
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <vector>
 
-#if defined(HAS_NEON)
+#if (defined(__arm__) && defined(HAS_NEON)) || defined(__aarch64__)
 #include <asm/hwcap.h>
 #include <sys/auxv.h>
-#else
+#elif defined(__i386__) || defined(__x86_64__)
 #include <cpuid.h>
 #endif
 
@@ -67,22 +69,56 @@ std::shared_ptr<CCPUInfo> CCPUInfo::GetCPUInfo()
 
 CCPUInfoLinux::CCPUInfoLinux()
 {
-  // new socs use the sysfs soc interface to describe the hardware
-  if (SysfsUtils::Has("/sys/bus/soc/devices/soc0"))
+  CSysfsPath machinePath{"/sys/bus/soc/devices/soc0/machine"};
+  if (machinePath.Exists())
+    m_cpuHardware = machinePath.Get<std::string>();
+
+  CSysfsPath familyPath{"/sys/bus/soc/devices/soc0/family"};
+  if (familyPath.Exists())
+    m_cpuSoC = familyPath.Get<std::string>();
+
+  CSysfsPath socPath{"/sys/bus/soc/devices/soc0/soc_id"};
+  if (socPath.Exists())
+    m_cpuSoC += " " + socPath.Get<std::string>();
+
+  const std::string freqStr{"/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"};
+  CSysfsPath freqPath{freqStr};
+  if (freqPath.Exists())
+    m_freqPath = freqStr;
+
+  const std::array<std::string, 3> modules = {
+      "coretemp",
+      "k10temp",
+      "scpi_sensors",
+  };
+
+  for (int i = 0; i < 20; i++)
   {
-    std::string machine;
-    std::string family;
-    std::string socId;
-    if (SysfsUtils::Has("/sys/bus/soc/devices/soc0/machine"))
-      SysfsUtils::GetString("/sys/bus/soc/devices/soc0/machine", machine);
-    if (SysfsUtils::Has("/sys/bus/soc/devices/soc0/family"))
-      SysfsUtils::GetString("/sys/bus/soc/devices/soc0/family", family);
-    if (SysfsUtils::Has("/sys/bus/soc/devices/soc0/soc_id"))
-      SysfsUtils::GetString("/sys/bus/soc/devices/soc0/soc_id", socId);
-    if (m_cpuHardware.empty() && !machine.empty())
-      m_cpuHardware = machine;
-    if (!family.empty() && !socId.empty())
-      m_cpuSoC = family + " " + socId;
+    CSysfsPath path{"/sys/class/hwmon/hwmon" + std::to_string(i) + "/name"};
+    if (!path.Exists())
+      continue;
+
+    auto name = path.Get<std::string>();
+
+    if (name.empty())
+      continue;
+
+    for (const auto& module : modules)
+    {
+      if (module == name)
+      {
+        std::string tempStr{"/sys/class/hwmon/hwmon" + std::to_string(i) + "/temp1_input"};
+        CSysfsPath tempPath{tempStr};
+        if (!tempPath.Exists())
+          continue;
+
+        m_tempPath = tempStr;
+        break;
+      }
+    }
+
+    if (!m_tempPath.empty())
+      break;
   }
 
   m_cpuCount = sysconf(_SC_NPROCESSORS_ONLN);
@@ -94,7 +130,7 @@ CCPUInfoLinux::CCPUInfoLinux()
     m_cores.emplace_back(coreInfo);
   }
 
-#if !defined(HAS_NEON)
+#if defined(__i386__) || defined(__x86_64__)
   unsigned int eax;
   unsigned int ebx;
   unsigned int ecx;
@@ -182,12 +218,41 @@ CCPUInfoLinux::CCPUInfoLinux()
         m_cpuFeatures |= CPU_FEATURE_3DNOWEXT;
     }
   }
+#else
+  std::ifstream cpuinfo("/proc/cpuinfo");
+  std::regex re(".*: (.*)$");
+
+  for (std::string line; std::getline(cpuinfo, line);)
+  {
+    std::smatch match;
+
+    if (std::regex_match(line, match, re))
+    {
+      if (match.size() == 2)
+      {
+        std::ssub_match value = match[1];
+
+        if (line.find("model name") != std::string::npos)
+          m_cpuModel = value.str();
+
+        if (line.find("BogoMIPS") != std::string::npos)
+          m_cpuBogoMips = value.str();
+
+        if (line.find("Hardware") != std::string::npos)
+          m_cpuHardware = value.str();
+
+        if (line.find("Serial") != std::string::npos)
+          m_cpuSerial = value.str();
+
+        if (line.find("Revision") != std::string::npos)
+          m_cpuRevision = value.str();
+      }
+    }
+  }
 #endif
 
-#if defined(HAS_NEON) && !defined(__LP64__)
+#if defined(HAS_NEON) && defined(__arm__)
   if (getauxval(AT_HWCAP) & HWCAP_NEON)
-#endif
-#if defined(HAS_NEON)
     m_cpuFeatures |= CPU_FEATURE_NEON;
 #endif
 
@@ -254,32 +319,22 @@ int CCPUInfoLinux::GetUsedPercentage()
 
 float CCPUInfoLinux::GetCPUFrequency()
 {
-  int value{-1};
-  if (SysfsUtils::Has("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"))
-    SysfsUtils::GetInt("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", value);
+  if (m_freqPath.empty())
+    return -1;
 
-  value /= 1000.0;
-
-  return value;
+  CSysfsPath path{m_freqPath};
+  return path.Get<float>() / 1000.0;
 }
 
 bool CCPUInfoLinux::GetTemperature(CTemperature& temperature)
 {
-  if (!SysfsUtils::Has("/sys/class/hwmon/hwmon0/temp1_input"))
-    return CCPUInfo::GetTemperature(temperature);
+  if (m_tempPath.empty())
+    return CCPUInfoPosix::GetTemperature(temperature);
 
-  int value{-1};
-  char scale{'c'};
+  CSysfsPath path{m_tempPath};
+  double value = path.Get<double>() / 1000.0;
 
-  SysfsUtils::GetInt("/sys/class/hwmon/hwmon0/temp1_input", value);
-  value = value / 1000.0;
-  scale = 'c';
-
-  if (scale == 'C' || scale == 'c')
-    temperature = CTemperature::CreateFromCelsius(value);
-  else if (scale == 'F' || scale == 'f')
-    temperature = CTemperature::CreateFromFahrenheit(value);
-
+  temperature = CTemperature::CreateFromCelsius(value);
   temperature.SetValid(true);
 
   return true;

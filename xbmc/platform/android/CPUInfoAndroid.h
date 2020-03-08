@@ -8,15 +8,17 @@
 
 #pragma once
 
-#include "utils/CPUInfo.h"
 #include "utils/Temperature.h"
 
-class CCPUInfoAndroid : public CCPUInfo
+#include "platform/posix/CPUInfoPosix.h"
+
+class CCPUInfoAndroid : public CCPUInfoPosix
 {
 public:
   CCPUInfoAndroid();
   ~CCPUInfoAndroid() = default;
 
+  bool SupportsCPUUsage() const override { return false; }
   int GetUsedPercentage() override { return 0; }
   float GetCPUFrequency() override { return 0; }
 };

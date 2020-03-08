@@ -154,27 +154,27 @@ void CPVRGUIInfo::Process()
 
     if (!m_bStop)
       UpdateQualityData();
-    Sleep(0);
+    std::this_thread::yield();
 
     if (!m_bStop)
       UpdateDescrambleData();
-    Sleep(0);
+    std::this_thread::yield();
 
     if (!m_bStop)
       UpdateMisc();
-    Sleep(0);
+    std::this_thread::yield();
 
     if (!m_bStop)
       UpdateTimeshiftData();
-    Sleep(0);
+    std::this_thread::yield();
 
     if (!m_bStop)
       UpdateTimersToggle();
-    Sleep(0);
+    std::this_thread::yield();
 
     if (!m_bStop)
       UpdateNextTimer();
-    Sleep(0);
+    std::this_thread::yield();
 
     // Update the backend cache every toggleInterval seconds
     if (!m_bStop && iLoop % toggleInterval == 0)
@@ -184,7 +184,7 @@ void CPVRGUIInfo::Process()
       iLoop = 0;
 
     if (!m_bStop)
-      Sleep(500);
+      CThread::Sleep(500);
   }
 }
 
@@ -404,6 +404,8 @@ bool CPVRGUIInfo::GetListItemAndPlayerLabel(const CFileItem* item, const CGUIInf
       case VIDEOPLAYER_EPISODENAME:
       case LISTITEM_EPISODENAME:
         strValue = recording->EpisodeName();
+        // fixup multiline episode name strings (which do not fit in any way in our GUI)
+        StringUtils::Replace(strValue, "\n", ", ");
         return true;
       case VIDEOPLAYER_CHANNEL_NAME:
       case LISTITEM_CHANNEL_NAME:
@@ -582,7 +584,11 @@ bool CPVRGUIInfo::GetListItemAndPlayerLabel(const CFileItem* item, const CGUIInf
       case VIDEOPLAYER_EPISODENAME:
       case LISTITEM_EPISODENAME:
         if (!CServiceBroker::GetPVRManager().IsParentalLocked(epgTag))
+        {
           strValue = epgTag->EpisodeName();
+          // fixup multiline episode name strings (which do not fit in any way in our GUI)
+          StringUtils::Replace(strValue, "\n", ", ");
+        }
         return true;
       case VIDEOPLAYER_CAST:
       case LISTITEM_CAST:

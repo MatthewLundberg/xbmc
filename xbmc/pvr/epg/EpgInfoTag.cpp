@@ -10,7 +10,6 @@
 
 #include "ServiceBroker.h"
 #include "addons/kodi-addon-dev-kit/include/kodi/xbmc_pvr_types.h"
-#include "cores/DataCacheCore.h"
 #include "pvr/PVRManager.h"
 #include "pvr/PVRPlaybackState.h"
 #include "pvr/addons/PVRClient.h"
@@ -37,15 +36,25 @@ CPVREpgInfoTag::CPVREpgInfoTag()
 {
 }
 
-CPVREpgInfoTag::CPVREpgInfoTag(const std::shared_ptr<CPVREpgChannelData>& channelData, int iEpgID)
-: m_iUniqueBroadcastID(EPG_TAG_INVALID_UID),
-  m_iFlags(EPG_TAG_FLAG_UNDEFINED),
-  m_iEpgID(iEpgID)
+CPVREpgInfoTag::CPVREpgInfoTag(const std::shared_ptr<CPVREpgChannelData>& channelData,
+                               int iEpgID,
+                               const CDateTime& start,
+                               const CDateTime& end,
+                               bool bIsGapTag)
+  : m_iUniqueBroadcastID(EPG_TAG_INVALID_UID),
+    m_iFlags(EPG_TAG_FLAG_UNDEFINED),
+    m_bIsGapTag(bIsGapTag),
+    m_iEpgID(iEpgID)
 {
   if (channelData)
     m_channelData = channelData;
   else
     m_channelData = std::make_shared<CPVREpgChannelData>();
+
+  const CDateTimeSpan correction(
+      0, 0, 0, CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_iPVRTimeCorrection);
+  m_startTime = start + correction;
+  m_endTime = end + correction;
 
   UpdatePath();
 }
@@ -128,35 +137,10 @@ bool CPVREpgInfoTag::operator ==(const CPVREpgInfoTag& right) const
     return true;
 
   CSingleLock lock(m_critSection);
-  return (m_iDatabaseID == right.m_iDatabaseID &&
-          m_iGenreType == right.m_iGenreType &&
-          m_iGenreSubType == right.m_iGenreSubType &&
-          m_iParentalRating == right.m_iParentalRating &&
-          m_firstAired == right.m_firstAired &&
-          m_iStarRating == right.m_iStarRating &&
-          m_iSeriesNumber == right.m_iSeriesNumber &&
-          m_iEpisodeNumber == right.m_iEpisodeNumber &&
-          m_iEpisodePart == right.m_iEpisodePart &&
-          m_iUniqueBroadcastID == right.m_iUniqueBroadcastID &&
-          m_strTitle == right.m_strTitle &&
-          m_strPlotOutline == right.m_strPlotOutline &&
-          m_strPlot == right.m_strPlot &&
-          m_strOriginalTitle == right.m_strOriginalTitle &&
-          m_cast == right.m_cast &&
-          m_directors == right.m_directors &&
-          m_writers == right.m_writers &&
-          m_iYear == right.m_iYear &&
-          m_strIMDBNumber == right.m_strIMDBNumber &&
-          m_genre == right.m_genre &&
-          m_strEpisodeName == right.m_strEpisodeName &&
-          m_iEpgID == right.m_iEpgID &&
-          m_strIconPath == right.m_strIconPath &&
-          m_strFileNameAndPath == right.m_strFileNameAndPath &&
-          m_startTime == right.m_startTime &&
-          m_endTime == right.m_endTime &&
-          m_iFlags == right.m_iFlags &&
-          m_strSeriesLink == right.m_strSeriesLink &&
-          m_channelData == right.m_channelData);
+  return (m_iUniqueBroadcastID == right.m_iUniqueBroadcastID && m_channelData &&
+          right.m_channelData &&
+          m_channelData->UniqueClientChannelId() == right.m_channelData->UniqueClientChannelId() &&
+          m_channelData->ClientId() == right.m_channelData->ClientId());
 }
 
 bool CPVREpgInfoTag::operator !=(const CPVREpgInfoTag& right) const
@@ -210,45 +194,14 @@ int CPVREpgInfoTag::ClientID() const
   return m_channelData->ClientId();
 }
 
-void CPVREpgInfoTag::ToSortable(SortItem& sortable, Field field) const
-{
-  CSingleLock lock(m_critSection);
-
-  switch (field)
-  {
-    case FieldChannelName:
-      sortable[FieldChannelName] = m_channelData->ChannelName();
-      break;
-    case FieldChannelNumber:
-      sortable[FieldChannelNumber] = m_channelData->SortableChannelNumber();
-      break;
-    case FieldClientChannelOrder:
-      if (m_channelData->ClientOrder())
-        sortable[FieldClientChannelOrder] = m_channelData->ClientOrder();
-      else
-        sortable[FieldClientChannelOrder] = m_channelData->SortableClientChannelNumber();
-      break;
-    case FieldLastPlayed:
-      sortable[FieldLastPlayed] = m_channelData->LastWatched();
-      break;
-    default:
-      break;
-  }
-}
-
 CDateTime CPVREpgInfoTag::GetCurrentPlayingTime() const
 {
-  if (CServiceBroker::GetPVRManager().PlaybackState()->IsPlayingChannel(ClientID(), UniqueChannelID()))
-  {
-    // start time valid?
-    time_t startTime = CServiceBroker::GetDataCacheCore().GetStartTime();
-    if (startTime > 0)
-    {
-      return CDateTime(startTime + CServiceBroker::GetDataCacheCore().GetPlayTime() / 1000);
-    }
-  }
-
-  return CDateTime::GetUTCDateTime();
+  const std::shared_ptr<CPVRPlaybackState> playbackState =
+      CServiceBroker::GetPVRManager().PlaybackState();
+  if (playbackState && playbackState->IsPlayingChannel(ClientID(), UniqueChannelID()))
+    return playbackState->GetPlaybackTime();
+  else
+    return CDateTime::GetUTCDateTime();
 }
 
 bool CPVREpgInfoTag::IsActive() const
@@ -440,11 +393,14 @@ void CPVREpgInfoTag::SetGenre(int iGenreType, int iGenreSubType, const char* str
        * EPG_GENRE_USE_STRING leaving type available for genre category, use the provided genre description for the text. */
       m_genre = Tokenize(strGenre);
     }
-    else
-    {
-      /* Determine the genre description from the type and subtype IDs */
-      m_genre = StringUtils::Split(CPVREpg::ConvertGenreIdToString(iGenreType, iGenreSubType), CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_videoItemSeparator);
-    }
+  }
+
+  if (m_genre.empty())
+  {
+    // Determine the genre description from the type and subtype IDs.
+    m_genre = StringUtils::Split(
+        CPVREpg::ConvertGenreIdToString(iGenreType, iGenreSubType),
+        CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_videoItemSeparator);
   }
 }
 
@@ -703,6 +659,12 @@ bool CPVREpgInfoTag::IsParentalLocked() const
 {
   CSingleLock lock(m_critSection);
   return m_channelData->IsLocked();
+}
+
+bool CPVREpgInfoTag::IsGapTag() const
+{
+  CSingleLock lock(m_critSection);
+  return m_bIsGapTag;
 }
 
 const std::vector<std::string> CPVREpgInfoTag::Tokenize(const std::string& str)

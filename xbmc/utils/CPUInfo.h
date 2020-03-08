@@ -75,9 +75,11 @@ public:
 
   static std::shared_ptr<CCPUInfo> GetCPUInfo();
 
+  virtual bool SupportsCPUUsage() const { return true; }
+
   virtual int GetUsedPercentage() = 0;
   virtual float GetCPUFrequency() = 0;
-  virtual bool GetTemperature(CTemperature& temperature);
+  virtual bool GetTemperature(CTemperature& temperature) = 0;
 
   bool HasCoreId(int coreId) const;
   const CoreInfo GetCoreInfo(int coreId);
@@ -98,13 +100,13 @@ protected:
 
   int m_lastUsedPercentage;
   XbmcThreads::EndTime m_nextUsedReadTime;
-  std::string m_cpuVendor{"N/A"};
-  std::string m_cpuModel{"N/A"};
-  std::string m_cpuBogoMips{"N/A"};
-  std::string m_cpuSoC{"N/A"};
-  std::string m_cpuHardware{"N/A"};
-  std::string m_cpuRevision{"N/A"};
-  std::string m_cpuSerial{"N/A"};
+  std::string m_cpuVendor;
+  std::string m_cpuModel;
+  std::string m_cpuBogoMips;
+  std::string m_cpuSoC;
+  std::string m_cpuHardware;
+  std::string m_cpuRevision;
+  std::string m_cpuSerial;
 
   double m_usagePercent{0.0};
   std::size_t m_activeTime{0};
