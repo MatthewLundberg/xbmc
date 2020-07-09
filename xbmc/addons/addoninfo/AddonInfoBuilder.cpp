@@ -114,7 +114,7 @@ bool CAddonInfoBuilder::ParseXML(const AddonInfoPtr& addon, const TiXmlElement* 
 
   if (!StringUtils::EqualsNoCase(element->Value(), "addon"))
   {
-    CLog::Log(LOGERROR, "CAddonInfoBuilder::{}: file from '{}' doesnt contain <addon>", __FUNCTION__, addonPath);
+    CLog::Log(LOGERROR, "CAddonInfoBuilder::{}: file from '{}' doesn't contain <addon>", __FUNCTION__, addonPath);
     return false;
   }
 
@@ -135,7 +135,7 @@ bool CAddonInfoBuilder::ParseXML(const AddonInfoPtr& addon, const TiXmlElement* 
   addon->m_author = cstring ? cstring : "";
   if (addon->m_id.empty() || addon->m_version.empty())
   {
-    CLog::Log(LOGERROR, "CAddonInfoBuilder::{}: file '{}' doesnt contain required values on <addon ... > id='{}', version='{}'",
+    CLog::Log(LOGERROR, "CAddonInfoBuilder::{}: file '{}' doesn't contain required values on <addon ... > id='{}', version='{}'",
               __FUNCTION__,
               addonPath,
               addon->m_id.empty() ? "missing" : addon->m_id,
@@ -281,7 +281,14 @@ bool CAddonInfoBuilder::ParseXML(const AddonInfoPtr& addon, const TiXmlElement* 
       /* Parse addon.xml "<platform">...</platform>" */
       element = child->FirstChildElement("platform");
       if (element && element->GetText() != nullptr)
-        addon->m_platforms = StringUtils::Split(element->GetText(), " ");
+      {
+        auto platforms = StringUtils::Split(element->GetText(),
+                                            {" ", "\t", "\n", "\r"});
+        platforms.erase(std::remove_if(platforms.begin(), platforms.end(),
+                        [](const std::string& platform) { return platform.empty(); }),
+                        platforms.cend());
+        addon->m_platforms = platforms;
+      }
 
       /* Parse addon.xml "<license">...</license>" */
       element = child->FirstChildElement("license");
@@ -322,21 +329,6 @@ bool CAddonInfoBuilder::ParseXML(const AddonInfoPtr& addon, const TiXmlElement* 
       element = child->FirstChildElement("reuselanguageinvoker");
       if (element && element->GetText() != nullptr)
         addon->AddExtraInfo("reuselanguageinvoker", element->GetText());
-
-      /* Parse addon.xml "<noicon">...</noicon>" */
-      if (addon->m_icon.empty())
-      {
-        element = child->FirstChildElement("noicon");
-        addon->m_icon = (element && strcmp(element->GetText() , "true") == 0) ? "" : URIUtils::AddFileToFolder(assetBasePath, "icon.png");
-      }
-
-      /* Parse addon.xml "<nofanart">...</nofanart>" */
-      if (addon->m_art.empty())
-      {
-        element = child->FirstChildElement("nofanart");
-        if (!element || strcmp(element->GetText(), "true") != 0)
-          addon->m_art["fanart"] = URIUtils::AddFileToFolder(assetBasePath, "fanart.jpg");
-      }
 
       /* Parse addon.xml "<size">...</size>" */
       element = child->FirstChildElement("size");
@@ -587,7 +579,6 @@ bool CAddonInfoBuilder::PlatformSupportsAddon(const AddonInfoPtr& addon)
 #endif
 #elif defined(TARGET_FREEBSD)
     "freebsd",
-    "linux",
 #elif defined(TARGET_LINUX)
     "linux",
 #elif defined(TARGET_WINDOWS_DESKTOP)

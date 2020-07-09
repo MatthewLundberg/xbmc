@@ -178,7 +178,7 @@ int MysqlDatabase::connect(bool create_new) {
       if (!showed_ver_info)
       {
         std::string version_string = mysql_get_server_info(conn);
-        CLog::Log(LOGNOTICE, "MYSQL: Connected to version {}", version_string);
+        CLog::Log(LOGINFO, "MYSQL: Connected to version {}", version_string);
         showed_ver_info = true;
         unsigned long version = mysql_get_server_version(conn);
         // Minimum for MySQL: 5.6 (5.5 is EOL)
@@ -435,7 +435,33 @@ int MysqlDatabase::drop_analytics(void) {
       if ( (ret=query_with_reconnect(sql)) != MYSQL_OK )
       {
         mysql_free_result(res);
-        throw DbErrors("Can't create trigger '%s'\nError: %d", row[0], ret);
+        throw DbErrors("Can't drop trigger '%s'\nError: %d", row[0], ret);
+      }
+    }
+    mysql_free_result(res);
+  }
+
+  // Native functions
+  sprintf(sql,
+          "SELECT routine_name "
+          "FROM information_schema.routines "
+          "WHERE routine_type = 'FUNCTION' and routine_schema = '%s'",
+          db.c_str());
+  if ((ret = query_with_reconnect(sql)) != MYSQL_OK)
+    throw DbErrors("Can't determine list of routines to drop.");
+
+  res = mysql_store_result(conn);
+
+  if (res)
+  {
+    while ((row = mysql_fetch_row(res)) != NULL)
+    {
+      sprintf(sql, "DROP FUNCTION `%s`.%s", db.c_str(), row[0]);
+
+      if ((ret = query_with_reconnect(sql)) != MYSQL_OK)
+      {
+        mysql_free_result(res);
+        throw DbErrors("Can't drop function '%s'\nError: %d", row[0], ret);
       }
     }
     mysql_free_result(res);
@@ -588,10 +614,33 @@ std::string MysqlDatabase::vprepare(const char *format, va_list args)
     pos += 6;
   }
 
+  // Replace some dataypes in CAST statements: 
+  // before: CAST(iFoo AS TEXT), CAST(foo AS INTEGER)
+  // after:  CAST(iFoo AS CHAR), CAST(foo AS SIGNED INTEGER)
+  pos = strResult.find("CAST(");
+  while (pos != std::string::npos)
+  {
+    size_t pos2 = strResult.find(" AS TEXT)", pos + 1);
+    if (pos2 != std::string::npos)
+      strResult.replace(pos2, 9, " AS CHAR)");
+    else
+    {
+      pos2 = strResult.find(" AS INTEGER)", pos + 1);
+      if (pos2 != std::string::npos)
+        strResult.replace(pos2, 12, " AS SIGNED INTEGER)");
+    }
+    pos = strResult.find("CAST(", pos + 1);
+  }
+
   // Remove COLLATE NOCASE the SQLite case insensitive collation.
   // In MySQL all tables are defined with case insensitive collation utf8_general_ci
   pos = 0;
   while ((pos = strResult.find(" COLLATE NOCASE", pos)) != std::string::npos)
+    strResult.erase(pos++, 15);
+
+  // Remove COLLATE ALPHANUM the SQLite custom collation.
+  pos = 0;
+  while ((pos = strResult.find(" COLLATE ALPHANUM", pos)) != std::string::npos)
     strResult.erase(pos++, 15);
 
   return strResult;
